@@ -1,50 +1,59 @@
-var request = require('request'),
-	$ = require('jquery'),
-	h = require('apis-helpers'),
-	app = require('../../server');
+import request from 'request'
+import $ from 'cheerio'
+import h from 'apis-helpers'
+import app from '../../server'
 
+const lookupCar = plate => new Promise((resolve, reject) => {
+  // Encode carPlate so that Icelandic characters will work
+  const carPlate = encodeURIComponent(plate)
+  const url = `http://www.samgongustofa.is/umferd/okutaeki/okutaekjaskra/uppfletting?vq=${carPlate}`
 
-app.get('/car', function(req, res){
-	var carPlate = req.query.number || req.query.carPlate || '';
-	
-	if(!carPlate)
-		return res.json(431,{error:'Please provide a valid carPlate to lookup'});
+  request.get({
+    headers: { 'User-Agent': h.browser() },
+    url,
+  }, (error, response, body) => {
+    if (error || response.statusCode !== 200) {
+      reject('www.samgongustofa.is refuses to respond or give back data')
+    }
 
-	request.get({
-		headers: {'User-Agent': h.browser()},
-		url: 'http://ww2.us.is/upplysingar_um_bil?vehinumber='+carPlate
-	}, function(error, response, body){
-		if(error || response.statusCode !== 200) {
-			return res.json(500,{error:'www.us.is refuses to respond or give back data'});
-		}
-		var data = $(body),
-			obj = { results: []},
-			car = {
-				'registryNumber': 0,
-				'number': 0,
-				'factoryNumber': 0,
-				'type': '',
-				'subType': '',
-				'color': '',
-				'registeredAt': '',
-				'status': '',
-				'nextCheck': '',
-				'pollution': '',
-				'weight': 0
-			}
+    const data = $(body)
+    const fields = []
 
-		var fields = ['registryNumber','number','factoryNumber','type','subType','color','registeredAt','status','nextCheck','pollution','weight'];
-		var nothingFound = data.find('table tr td').html();
-		if( nothingFound.indexOf('Ekkert ökutæki fannst') == -1){
-			//Found something
-			data.find('table tr').each(function(key){
-				var val = $(this).find('b').html();
-				if(val != '' && val != 0){ //Perform check and add to car array if it passes
-					car[fields[key]] = val;
-				}
-			});
-			obj.results.push(car);
-		}
-		return res.cache().json(obj);
-	});
-});
+    data.find('.vehicleinfo ul li').each(function () {
+      const val = $(this).find('span').text()
+      fields.push(val)
+    })
+
+    if (fields.length > 0) {
+      resolve({
+        type: fields[0],
+        subType: fields[0].substring(fields[0].indexOf('-') + 2, fields[0].indexOf('(') - 1),
+        color: fields[0].substring(fields[0].indexOf('(') + 1, fields[0].indexOf(')')),
+        registryNumber: fields[1],
+        number: fields[2],
+        factoryNumber: fields[3],
+        registeredAt: fields[4],
+        pollution: fields[5],
+        weight: fields[6],
+        status: fields[7],
+        nextCheck: fields[8],
+      })
+    } else {
+      reject(`No car found with the registry number ${plate}`)
+    }
+  })
+})
+
+app.get('/car', (req, res) => {
+  const carPlate = req.query.number || req.query.carPlate || ''
+
+  if (!carPlate) {
+    return res.status(431).json({ error: 'Please provide a valid carPlate to lookup' })
+  }
+
+  lookupCar(carPlate)
+    .then(car => res.cache().json({ results: [car] }))
+    .catch(error => res.status(500).json({ error }))
+})
+
+export default lookupCar

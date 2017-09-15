@@ -1,14 +1,27 @@
-var _ = require('underscore'),
-    env = process.env.NODE_ENV ? process.env.NODE_ENV + '.config' : 'dev.config',
-    defaultConfig = require('./default.json'),
-    envConfig = {};
+import _ from 'lodash'
+import makeDebug from 'debug'
+import defaultConfig from './default.json'
 
-if (process.env.INTEGRATION) env = 'integration';
+const debug = makeDebug('config')
 
-try {
-    envConfig = require('./' + env + '.json');
-} catch (e) {
-    console.log(e.code == 'MODULE_NOT_FOUND' ? 'Please create a dev.config.json file in the config folder' : e);
+let env = process.env.NODE_ENV ? `${process.env.NODE_ENV}.config` : 'dev.config'
+let envConfig = {}
+
+if (process.env.INTEGRATION) {
+  env = 'integration'
 }
 
-module.exports = _.extend(defaultConfig, envConfig);
+try {
+  envConfig = require(`./${env}.json`)
+} catch (e) {
+  switch (e.code) {
+    case 'MODULE_NOT_FOUND':
+      debug('Please create a dev.config.json file in the config folder')
+      break
+    default:
+      debug(e)
+      break
+  }
+}
+
+module.exports = _.extend(defaultConfig, envConfig)

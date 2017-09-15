@@ -1,27 +1,34 @@
-var fs = require('fs'),
-	fileModule = require('file'),
-	testDir = '/tests',
-	testFileName = 'integration_test.js';
-	
-process.env.INTEGRATION = true;
+// Turn test mode on
+process.env.INTEGRATION = true
 
-describe('endpoint', function() {
-	it('should load the server and set everything up properly',function(done){
-		this.timeout(1000); //Server should not take more than 1 sek to boot
+import fs from 'fs'
+import path from 'path'
+import fileModule from 'file'
 
-		var app = require(process.cwd() + '/server');
+const testDir = 'tests'
+const testFileName = 'integration_test.js'
 
-		app.on('ready',function(){
-			fileModule.walkSync('./endpoints', function(dirPath, dirs, files){
-		        if (dirPath.indexOf(testDir) < 0) return;
-		        files.forEach(function(file){
-		            if (file != testFileName) return;
-		            var path = dirPath + '/' + file;
-		            if (!fs.existsSync(path)) return;
-		            require('../../' + path);
-		        });
-			});
-			done();
-		});
-	});
-});
+describe('endpoint', () => {
+  it('should load the server and set everything up properly', (done) => {
+    const app = require(`${process.cwd()}/server`)
+
+    app.on('ready', () => {
+      fileModule.walkSync('./endpoints', (dirPath, dirs, files) => {
+        if (dirPath.indexOf(testDir) < 0) return
+
+        files.forEach((file) => {
+          if (file !== testFileName) return
+
+          const fullPath = `${dirPath}/${file}`
+
+          if (!fs.existsSync(fullPath)) return
+          if (path.extname(fullPath) !== '.js') return
+
+          require(`../../${fullPath}`)
+        })
+      })
+
+      done()
+    })
+  }).timeout(10000)
+})

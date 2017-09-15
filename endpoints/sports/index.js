@@ -1,134 +1,253 @@
-/*****************************
+/** ***************************
  * Name:     Sports API
  * Author:   Jón Orri Kristjánsson
  * Created:  March 2014
  */
 
-var request, parseString, h, app, cheerio;
-
-/** Requires **/
-request = require('request'),
-parseString = require('xml2js').parseString,
-h = require('apis-helpers'),
-app = require('../../server'),
-cheerio = require('cheerio'),
-$ = require('jquery'),
-
-/** Variable initialization **/
-
-/* Fetches the sports data and returns a JS object in a callback */
-function getJsonData(url, callback){
-  request.get({
-      headers: {'User-Agent': h.browser()},
-      url: url
-    }, function (error, response, body) {
-
-      if (error) throw new Error(url + ' did not respond');
-      
-      parseString(body, function (err, result, title) {
-        callback(result);
-    });
-  });
-}
+import request from 'request'
+import h from 'apis-helpers'
+import app from '../../server'
+import cheerio from 'cheerio'
 
 /** Routes **/
 
 /* Root sports handler */
-app.get('/sports', function (req, res, next) {
-
-  return res.json(
+app.get('/sports', (req, res, next) => {
+  res.json(
     {
       results: [
         {
-          info: 'This is an api for Ielandic sports events',
+          info: 'This is an api for Icelandic sports events',
           endpoints: {
             football: '/sports/football/',
-            handball: '/sports/handball/'
-          }
-        }
-      ]
+            handball: '/sports/handball/',
+            'football-male-leagues': '/sports/football/male-leagues/',
+            'football-female-leagues': '/sports/football/female-leagues/',
+          },
+        },
+      ],
     }
-  );
-  next();
-});
+  )
+  next()
+})
+
+/* Root footbal male leagues handler */
+app.get('/sports/football/male-leagues', (req, res, next) => {
+  res.json(
+    {
+      results: [
+        {
+          info: 'This is an api for Icelandic male football leagues',
+          endpoints: {
+            'borgun-cup': '/sports/football/male-leagues/borgun/',
+            pepsi: '/sports/football/male-leagues/pepsi/',
+            '1st': '/sports/football/male-leagues/1st/',
+            '2nd': '/sports/football/male-leagues/2nd/',
+            '3rd': '/sports/football/male-leagues/3rd/',
+          },
+        },
+      ],
+    }
+  )
+  next()
+})
+
+/* Root footbal female leagues handler */
+app.get('/sports/football/female-leagues', (req, res, next) => {
+  res.json(
+    {
+      results: [
+        {
+          info: 'This is an api for Icelandic female football leagues',
+          endpoints: {
+            'borgun-cup': '/sports/football/female-leagues/borgun/',
+            pepsi: '/sports/football/female-leagues/pepsi/',
+          },
+        },
+      ],
+    }
+  )
+  next()
+})
 
 /* Football */
-app.get('/sports/football', function (req, res) {
-  var url = 'http://www.ksi.is/mot/naestu-leikir/';
-  request.get({ headers: {'User-Agent': h.browser()}, url: url },
-    function(error, response, body) {
-      if(error || response.statusCode !== 200) {
-        return res.json(500,{error:'www.ksi.is refuses to respond or give back data'});
+app.get('/sports/football', (req, res) => {
+  const url = 'http://www.ksi.is/mot/naestu-leikir/'
+  request.get({
+    headers: { 'User-Agent': h.browser() },
+    url,
+  },
+    (error, response, body) => {
+      if (error || response.statusCode !== 200) {
+        return res.status(500).json({ error: 'www.ksi.is refuses to respond or give back data' })
       }
 
+      let $
+
       try {
-        var data = $(body);	
-      } catch(error) {
-        return res.json(500,{error:'Could not parse body'});
+        $ = cheerio.load(body)
+      } catch (exc) {
+        return res.status(500).json({ error: 'Could not parse body' })
       }
 
-      var obj = { results: []};
-      var fields = ['counter','date','time','tournament', 'location', 'homeTeam', 'awayTeam'];
+      const obj = { results: [] }
+      const fields = ['counter', 'date', 'time', 'tournament', 'location', 'homeTeam', 'awayTeam']
       try {
-        data.find('#leikir-tafla tr').not(':first').each(function(key) {
+        $('#leikir-tafla tr').each((key, element) => {
           if (key !== 0) {
-            var game = {};
-        	  $(this.cells).each(function(key2) {
-                var val = $(this).text();
-                if (val && val.trim() && val !== '' && val !== 0 && val !== '\t' && val !== '\n') {
-                  game[fields[key2]] = val;
-                }
-            });
+            const game = {}
+            $('td', element).each(function (key2) {
+              const val = $(this).text()
+              if (val && val.trim() && val !== '' && val !== 0 && val !== '\t' && val !== '\n') {
+                game[fields[key2]] = val
+              }
+            })
 
             // Checking whether it has the necessary fields
-            if (!$.isEmptyObject(game) && game.counter && game.date && game.time && game.tournament && game.location && game.homeTeam && game.awayTeam)
-              obj.results.push(game);
+            if (game.counter && game.date && game.time && game.tournament && game.location
+              && game.homeTeam && game.awayTeam) {
+              obj.results.push(game)
+            }
           }
-        });
-      } catch(error) {
-        return res.json(500, {error: 'Could not parse the game data'});
+        })
+      } catch (exc) {
+        return res.status(500).json({ error: 'Could not parse the game data' })
       }
 
-      return res.json(obj);
-    });
-});
+      return res.json(obj)
+    })
+})
 
-app.get('/sports/handball', function (req, res) {
-  var url = 'http://hsi.is/library/motamal/naestu.htm';
-  request.get({ headers: {'User-Agent': h.browser()}, url: url},
-    function(error, response, body) {
-      if(error || response.statusCode !== 200) {
-        return res.json(500, {error:'www.hsi.is refuses to respond or give back data'});
+function footballLeagues(url, req, res) {
+  request.get({
+    headers: { 'User-Agent': h.browser() },
+    url,
+  },
+    (error, response, body) => {
+      if (error || response.statusCode !== 200) {
+        return res.status(500).json({ error: 'www.ksi.is refuses to respond or give back data' })
       }
+
+      let $
 
       try {
-        var data = $(body);
-      } catch(error) {
-        return res.json(500, {error:'Could not parse body'});
+        $ = cheerio.load(body)
+      } catch (exc) {
+        return res.status(500).json({ error: 'Could not parse body' })
       }
 
-      var obj = {results: []};
-      var fields = ['Date', 'Time', 'Tournament', 'Venue', 'Teams'];
-
+      const obj = { results: [] }
+      const fields = ['counter', 'date', 'time', 'teams', 'location', 'scores']
       try {
-        data.find('table').eq(1).find('tr').not(':first').each(function(key) {
+        $('#leikir-tafla tr').each(function (key) {
           if (key !== 0) {
-            var game = {};
-            $(this.cells).each(function(key2) {
-              var val = $(this).text().trim();
-              if (val && val !== '' && val !== 0) {
-                game[fields[key2]] = val;
+            const game = {}
+            $('td', this).each(function (key2) {
+              const val = $(this).text()
+              if (val !== 0 && val !== '\t' && val !== '\n' && fields[key2]) {
+                game[fields[key2]] = val
               }
-            });
+            })
 
-            if (!$.isEmptyObject(game) && game.Date && game.Time && game.Tournament && game.Venue && game.Teams)
-              obj.results.push(game);
+            // Checking whether it has the necessary fields
+            if (game.counter && game.date && game.time && game.teams && game.location) {
+              obj.results.push(game)
+            }
           }
-        });
-      } catch(error) {
-        return res.json(500, {error: 'Could not parse the game data: ' + error});
+        })
+      } catch (exc) {
+        return res.status(500).json({ error: 'Could not parse the game data' })
       }
 
-      return res.json(obj);
-    });
-});
+      return res.json(obj)
+    })
+}
+
+/* Football male borgun cup */
+app.get('/sports/football/male-leagues/borgun', (req, res) => {
+  const url = 'http://www.ksi.is/mot/motalisti/urslit-stada/?MotNumer=35590'
+  return footballLeagues(url, req, res)
+})
+
+/* Football male Pepsi league */
+app.get('/sports/football/male-leagues/pepsi', (req, res) => {
+  const url = 'http://www.ksi.is/mot/motalisti/urslit-stada/?MotNumer=35586'
+  return footballLeagues(url, req, res)
+})
+
+/* Football male 1st league */
+app.get('/sports/football/male-leagues/1st', (req, res) => {
+  const url = 'http://www.ksi.is/mot/motalisti/urslit-stada/?MotNumer=35585'
+  return footballLeagues(url, req, res)
+})
+
+/* Football male 2nd league */
+app.get('/sports/football/male-leagues/2nd', (req, res) => {
+  const url = 'http://www.ksi.is/mot/motalisti/urslit-stada/?MotNumer=35584'
+  return footballLeagues(url, req, res)
+})
+
+/* Football male 3rd league */
+app.get('/sports/football/male-leagues/3rd', (req, res) => {
+  const url = 'http://www.ksi.is/mot/motalisti/urslit-stada/?MotNumer=35307'
+  return footballLeagues(url, req, res)
+})
+
+/* Football female borgun cup */
+app.get('/sports/football/female-leagues/borgun', (req, res) => {
+  const url = 'http://www.ksi.is/mot/motalisti/urslit-stada/?MotNumer=35587'
+  return footballLeagues(url, req, res)
+})
+
+/* Football female Pepsi league */
+app.get('/sports/football/female-leagues/pepsi', (req, res) => {
+  const url = 'http://www.ksi.is/mot/motalisti/urslit-stada/?MotNumer=35583'
+  return footballLeagues(url, req, res)
+})
+
+
+/* Handball */
+app.get('/sports/handball', (req, res) => {
+  const url = 'http://hsi.is/library/motamal/naestu.htm'
+  request.get({
+    headers: { 'User-Agent': h.browser() },
+    url,
+  },
+    (error, response, body) => {
+      if (error || response.statusCode !== 200) {
+        return res.status(500).json({ error: 'www.hsi.is refuses to respond or give back data' })
+      }
+
+      let $
+      try {
+        $ = cheerio.load(body)
+      } catch (exc) {
+        return res.status(500).json({ error: 'Could not parse body' })
+      }
+
+      const obj = { results: [] }
+      const fields = ['Date', 'Time', 'Tournament', 'Venue', 'Teams']
+
+      try {
+        $('table').eq(1).find('tr').each(function (key) {
+          if (key !== 0) {
+            const game = {}
+            $('td', this).each(function (key2) {
+              const val = $(this).text().trim()
+              if (val && val !== '' && val !== 0) {
+                game[fields[key2]] = val
+              }
+            })
+
+            if (game.Date && game.Time && game.Tournament && game.Venue && game.Teams) {
+              obj.results.push(game)
+            }
+          }
+        })
+      } catch (exc) {
+        return res.status(500).json({ error: `Could not parse the game data: ${error}` })
+      }
+
+      return res.json(obj)
+    })
+})

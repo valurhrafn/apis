@@ -1,77 +1,83 @@
-var request = require('request'),
-    $ = require('jquery'),
-    app = require('../../server');
+import request from 'request'
+import app from '../../server'
+import cheerio from 'cheerio'
 
 
-var getLotto = function (req, res) {
-    getLottery(function(body) {
-        return res.cache(3600).json({
-            results: parseList(body)
-        });
-    });
-};
+const parseList = function (body) {
+  let $
+  try {
+    $ = cheerio.load(body)
+  } catch (error) {
+    throw new Error('Could not parse body')
+  }
 
-app.get('/lottery', getLotto);
-app.get('/lottery/lotto', getLotto);
+  const results = []
 
-app.get('/lottery/vikingalotto', function(req, res) {
-    getLottery(function(body) {
-        return res.cache(3600).json({
-            results: parseList(body)
-        });
-    }, 'https://games.lotto.is/lottoleikir/urslit/vikingalotto/');
-});
-app.get('/lottery/eurojackpot', function(req, res) {
-    getLottery(function(body) {
-        return res.cache(3600).json({
-            results: parseList(body)
-        });
-    }, 'https://games.lotto.is/lottoleikir/urslit/eurojackpot/');
-});
+  const tr = $('table').eq(1).find('tr')
 
-var getLottery = function(callback, url) {
-    url = url || 'https://igvefur.lotto.is/lottoleikir/urslit/lotto/';
+  tr.each(function (i) {
+    if (i === 0) return
+    const td = $(this).find('td')
 
-    var params = {
-        url: url
-    };
+    results.push({
+      date: td.eq(0).text().trim(),
+      lotto: td.eq(1).html().match(/\d{1,2}/g).join(' ').replace(/(\d{1,2})$/, '($1)'),
+      joker: td.eq(2).text().trim(),
+      prize: td.eq(3).text().trim(),
+      link: `http://lotto.is${td.eq(4).find('a').attr('href').trim()}`,
+    })
+  })
 
-    request(params, function (error, res, body) {
-        if (error) throw new Error(error);
+  return results
+}
 
-        if (res.statusCode != 200) {
-            throw new Error("HTTP error from endpoint, status code " + res.statusCode);
-        }
+const getLottery = function (callback, providedUrl) {
+  const url = providedUrl || 'https://igvefur.lotto.is/lottoleikir/urslit/lotto/'
 
-        return callback(body);
-    });
-};
+  const params = { url }
 
-var parseList = function ( body ) {
-	var site;
+  request(params, (error, res, body) => {
+    if (error) return callback(error)
 
-	try {
-		site = $(body);
-	} catch(error) {
-		throw new Error("Could not parse body");
-	}
+    if (res.statusCode !== 200) {
+      return callback(new Error(`HTTP error from endpoint, status code ${res.statusCode}`))
+    }
 
-    var results = [];
+    return callback(null, body)
+  })
+}
 
-    var tr = site.find('table').eq(1).find('tr');
+const getLotto = (req, res, next) => {
+  getLottery((err, body) => {
+    if (err) {
+      return next(502)
+    }
+    return res.cache(3600).json({
+      results: parseList(body),
+    })
+  })
+}
 
-    tr.each(function (i) {
-        if ( i === 0 ) return;
-        var td = $(this).find('td');
+app.get('/lottery', getLotto)
+app.get('/lottery/lotto', getLotto)
 
-        results.push({
-             date:  td.eq(0).text().trim(),
-             lotto: td.eq(1).html().match(/\d{1,2}/g).join(' ').replace(/(\d{1,2})$/, '($1)'),
-             joker: td.eq(2).text().trim(),
-             prize: td.eq(3).text().trim(),
-             link:  'http://lotto.is' + td.eq(4).find('a').attr('href').trim()
-        });
-    });
-
-    return results;
-};
+app.get('/lottery/vikingalotto', (req, res, next) => {
+  getLottery((err, body) => {
+    if (err) {
+      return next(502)
+    }
+    return res.cache(3600).json({
+      results: parseList(body),
+    })
+  }, 'https://games.lotto.is/lottoleikir/urslit/vikingalotto/')
+})
+app.get('/lottery/eurojackpot', (req, res, next) => {
+  getLottery((err, body) => {
+    if (err) {
+      return next(502)
+    }
+    return res.cache(3600).json({
+      results: parseList(body),
+    })
+  }, 'https://games.lotto.is/lottoleikir/urslit/eurojackpot/')
+})

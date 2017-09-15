@@ -1,86 +1,103 @@
-var h = require('apis-helpers'),
-	request = require('request'),
-	app = require('../../server'),
-	isn2wgs = require('isn2wgs');
+/* eslint-disable */
 
-app.get('/bus/realtime', function(req, res){
-	var data = req.query;
+const h = require('apis-helpers')
+const request = require('request')
+const app = require('../../server')
+const isn2wgs = require('isn2wgs')
 
-	request('http://straeto.is/bitar/bus/livemap/json.jsp', function (error, response, body) {
-		if(error || response.statusCode !== 200)
-			return res.json(500,{error:'The bus api is down or refuses to respond'});
+const debug = require('debug')('bus/realtime')
 
-		var obj;
-		try{
-			obj = JSON.parse(body);
-		}catch(error){
-			return res.json(500,{error:'Something is wrong with the data provided from the data source'});
-		}
+const getBusRoutes = (data) => new Promise((resolve, reject) => {
+  request.get('http://straeto.is/bitar/bus/livemap/json.jsp', function (error, response, body) {
+    if (error || response.statusCode !== 200) {
+      return reject('The bus api is down or refuses to respond')
+    }
 
-		var activeBusses = [],
-			requestedBusses = [];
+    var obj
+    try {
+      obj = JSON.parse(body)
+    } catch (error) {
+      return reject(error)
+    }
 
-		obj.routes.forEach(function(object, key){
-    		activeBusses.push(object.id);
-    	});
+    var activeBusses = [],
+      requestedBusses = []
 
-	    if(data.busses){ //Post busses = 1,2,3,4,5
-	    	requestedBusses = data.busses.split(",");
+    const routes = obj.routes || []
 
-	    	for(var i in requestedBusses){ //Prevent requested to busses that are not available
-	    		if(activeBusses.indexOf(requestedBusses[i]) == -1){
-					requestedBusses.splice(requestedBusses.indexOf(requestedBusses[i]),1);
-				}
-	    	}
-	    }else{
-	    	//No bus was posted, use all active busses
-	    	requestedBusses = activeBusses;
-	    }
+    routes.forEach(function (object, key) {
+      activeBusses.push(object.id)
+    })
 
-	    var objString = requestedBusses.join('%2C');
+    if (data.busses) { // Post busses = 1,2,3,4,5
+      requestedBusses = data.busses.split(',')
 
-	    request('http://straeto.is/bitar/bus/livemap/json.jsp?routes='+objString, function (error, response, body) {
+      for (var i in requestedBusses) { // Prevent requested to busses that are not available
+        if (activeBusses.indexOf(requestedBusses[i]) == -1) {
+          requestedBusses.splice(requestedBusses.indexOf(requestedBusses[i]), 1)
+        }
+      }
+    } else {
+      // No bus was posted, use all active busses
+      requestedBusses = activeBusses
+    }
 
-	    	if(error || response.statusCode !== 200)
-				return res.json(500,{error:'The bus api is down or refuses to respond'});
+    var objString = requestedBusses.join('%2C')
 
-			try{
-    			var data = JSON.parse(body);
-			}catch(e){
-				return res.json(500,{error:'Something is wrong with the data provided from the data source'});
-			}
+    request('http://straeto.is/bitar/bus/livemap/json.jsp?routes=' + objString, function (error, response, body) {
 
-    		var routes = data.routes;
+      if (error || response.statusCode !== 200) {
+        return reject(error)
+      }
 
-    		var objRoutes = {
-    			results: []
-    		};
-    		routes.forEach(function(route, key){
+      try {
+        var data = JSON.parse(body)
+      } catch (e) {
+        return reject(e)
+      }
 
-    			var objRoute = {
-                    busNr: route.id || "", // will be undefined if none are active
-    				busses: []
-    			}; 
-                objRoutes.results.push(objRoute);
+      var routes = data.routes || []
 
-                if (!route.busses) return; // No busses active, eg. after schedule
+      var objRoutes = {
+        results: []
+      }
+      routes.forEach(function (route, key) {
 
-    			route.busses.forEach(function(bus, key){
+        var objRoute = {
+          busNr: route.id || '', // will be undefined if none are active
+          busses: []
+        }
+        objRoutes.results.push(objRoute)
 
-    				var location = isn2wgs(bus.X,bus.Y),
-    					oneRoute = {
-    					'unixTime': Date.parse(bus.TIMESTAMPREAL)/1000,
-    					'x': location.latitude,
-    					'y': location.longitude,
-    					'from': bus.FROMSTOP,
-    					'to': bus.TOSTOP
-    				};
-    				objRoute.busses.push(oneRoute);
+        if (!route.busses) return // No busses active, eg. after schedule
 
-    			});
+        route.busses.forEach(function (bus, key) {
 
-    		});
-    		return res.json(objRoutes);
-	    });
-	});
-});
+          var location = isn2wgs(bus.X, bus.Y),
+            oneRoute = {
+            'unixTime': Date.parse(bus.TIMESTAMPREAL) / 1000,
+            'x': location.latitude,
+            'y': location.longitude,
+            'from': bus.FROMSTOP,
+            'to': bus.TOSTOP
+          }
+          objRoute.busses.push(oneRoute)
+
+        })
+
+      })
+      return resolve(objRoutes)
+    })
+  })
+})
+
+app.get('/bus/realtime', function (req, res) {
+  var data = req.query
+
+  getBusRoutes(data).then(
+    (routes) => res.json(routes),
+    () => res.status(500).json({ error:'Something is wrong with the data provided from the data source' })
+  )
+})
+
+export default getBusRoutes
